@@ -20,14 +20,14 @@ class MjxUnitreeG1(UnitreeG1):
             del kwargs["model_option_conf"]
         super().__init__(timestep=timestep, n_substeps=n_substeps, model_option_conf=model_option_conf, **kwargs)
         
-        # 获取球的 mocap body ID
-        self._football_mocap_id = None
-        football_body_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "football")
-        if football_body_id >= 0:
-            # 获取该 body 对应的 mocap ID
-            self._football_mocap_id = self._model.body_mocapid[football_body_id]
+        # 获取足球body ID和mocap ID
+        self._football_body_id = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_BODY, "football")
+        if self._football_body_id >= 0:
+            self._football_mocap_id = self._model.body_mocapid[self._football_body_id]
             if self._football_mocap_id < 0:
                 self._football_mocap_id = None
+        else:
+            self._football_mocap_id = None
 
     def _modify_spec_for_mjx(self, spec: MjSpec):
         """
@@ -51,8 +51,7 @@ class MjxUnitreeG1(UnitreeG1):
 
         # --- Make all geoms have contype and conaffinity of 0 ---
         for g in spec.geoms:
-            # Disable contacts for all geoms including football to avoid Mjx constraint issues
-            # The football will still be visible but won't participate in physics
+            # Disable contacts for all geoms by default
             g.contype = 0
             g.conaffinity = 0
 
@@ -60,8 +59,10 @@ class MjxUnitreeG1(UnitreeG1):
         for g_name in foot_geoms:
             spec.add_pair(geomname1="floor", geomname2=g_name)
         
-        # Note: We don't add football contact pair to avoid Mjx constraint broadcasting errors
-        # The football will be visible but static (won't fall or interact)
+        # 注意：暂时禁用足球与地面的碰撞，避免MJX约束问题
+        # 足球仍然可见，但不会与地面发生物理交互
+        # 如果需要足球物理交互，可以考虑使用CPU版本的MuJoCo
+        # spec.add_pair(geomname1="floor", geomname2="football_geom")
 
         return spec
     
@@ -70,6 +71,7 @@ class MjxUnitreeG1(UnitreeG1):
                          carry: MjxAdditionalCarry) -> Tuple[Data, MjxAdditionalCarry]:
         """
         重写以设置每个环境实例的球位置。
+        注意：足球使用mocap body，位置由初始状态处理器或这里设置。
         
         Args:
             model (Model): Mujoco model.
@@ -79,10 +81,10 @@ class MjxUnitreeG1(UnitreeG1):
         Returns:
             Tuple[Data, MjxAdditionalCarry]: Updated data and carry.
         """
-        # 先调用父类方法
+        # 调用父类方法
         data, carry = super()._mjx_reset_carry(model, data, carry)
         
-        # 为每个环境实例设置球的位置（在机器人前方）
+        # 如果足球mocap ID存在，设置足球位置（作为备用，初始状态处理器也会设置）
         if self._football_mocap_id is not None:
             # 检查 data.qpos 的维度
             qpos_ndim = data.qpos.ndim

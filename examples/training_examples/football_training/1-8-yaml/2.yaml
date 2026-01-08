@@ -49,7 +49,7 @@ experiment:
       football_distance_scale: 0.5  # 距离衰减尺度（越小衰减越快，建议范围：0.3-1.0）
         
   # PPO 超参数
-  hidden_layers: [1024, 512, 512, 256, 256]
+  hidden_layers: [512, 256, 128]
   lr: 85e-6
   num_envs: 4096
   num_steps: 200
@@ -74,18 +74,14 @@ experiment:
   vmap_across_seeds: true
   
   # ⭐⭐⭐ 改进的网络架构配置 ⭐⭐⭐
-  use_improved_network: true  # 启用改进的网络架构
+  use_improved_network: false  # 启用改进的网络架构
   
-  # 传统注意力机制（建议关闭）
-  use_residual: false
-  use_attention: false
-  attention_embed_dim: 128  # 提高嵌入维度
   
   # ⭐ 分组注意力配置（推荐开启）
-  use_grouped_attention: true  # 启用分组注意力机制
+  use_grouped_attention: false  # 启用分组注意力机制
   
   # ⭐ 通道注意力配置（推荐开启）
-  use_channel_attention: true  # 启用通道注意力
+  use_channel_attention: false  # 启用通道注意力
   channel_attention_layers: [0, 2]  # 在第1层和第3层后添加
   channel_reduction_ratio: 64  # 通道压缩比例
 
