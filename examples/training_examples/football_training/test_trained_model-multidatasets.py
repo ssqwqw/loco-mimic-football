@@ -4,12 +4,18 @@
 """
 
 import os
+import sys
 import jax
 import jax.numpy as jnp
 from omegaconf import OmegaConf
 from loco_mujoco.algorithms import PPOJax
 from loco_mujoco.task_factories import ImitationFactory, CustomDatasetConf
 from loco_mujoco.trajectory import Trajectory
+
+# 导入自定义的初始状态处理器和奖励函数
+sys.path.insert(0, os.path.dirname(__file__))
+from football_init_state import FootballInitialStateHandler
+from football_reward import FootballApproachReward
 
 
 # ⭐ 修改为您的多数据集训练模型路径
@@ -110,6 +116,7 @@ def fix_run_stats_dimension(run_stats, target_dim):
     # 调整维度
     if current_dim > target_dim:
         # 截取前 target_dim 维
+        # 注意：这可能导致归一化不准确，因为统计值是基于完整维度计算的
         new_mean = old_mean[:target_dim]
         new_var = old_var[:target_dim]
     else:
@@ -194,13 +201,29 @@ def main():
             'goal_params': {'visualize_goal': False},
             'control_type': 'DefaultControl',
             'control_params': {'max_torque': 1.5, 'min_torque': -1.5},
-            'reward_type': 'MimicReward',
+            # 使用自定义的足球接近奖励函数（与训练时相同）
+            'reward_type': 'FootballApproachReward',
             'reward_params': {
-                'qpos_w_sum': 0.7, 'qvel_w_sum': 0.3, 'rpos_w_sum': 0.8,
-                'rquat_w_sum': 0.5, 'rvel_w_sum': 0.2,
+                # MimicReward 基础参数（与训练配置保持一致）
+                'qpos_w_sum': 0.7,
+                'qvel_w_sum': 0.34,
+                'rpos_w_sum': 0.8,
+                'rquat_w_sum': 0.5,
+                'rvel_w_sum': 0.24,
+                'upper_body_stability_w': 0.3,
+                'waist_stability_w': 0.2,
                 'sites_for_mimic': ['upper_body_mimic', 'left_hand_mimic',
                                      'left_foot_mimic', 'right_hand_mimic',
-                                     'right_foot_mimic']
+                                     'right_foot_mimic'],
+                # 足球接近奖励参数（与训练配置保持一致）
+                'football_approach_weight': 0.3,  # 足球接近奖励的权重
+                'football_distance_scale': 0.5,   # 距离衰减尺度
+            },
+            # 使用自定义的初始状态处理器，将足球放在机器人正前方
+            'initial_state_type': 'FootballInitialStateHandler',
+            'initial_state_params': {
+                'football_distance': 0.8,  # 足球距离机器人0.8米
+                'football_height': 0.11,    # 足球高度0.11米（半径）
             }
         }
     else:
@@ -259,44 +282,61 @@ def main():
         else:
             print(f"  - run_stats 内容: {run_stats}")
         
-        # 尝试修复维度
-        fixed_run_stats = fix_run_stats_dimension(run_stats, actual_dim)
-        
-        if fixed_run_stats is None:
-            print(f"  - ⚠️  无法访问 run_stats，无法自动修复")
-            print(f"  - 建议：使用与训练时完全相同的环境配置")
-        else:
-            # 检查修复后的维度
-            # 查找修复后的 mean（可能在嵌套结构中）
-            fixed_mean = None
-            if isinstance(fixed_run_stats, dict):
-                # 检查是否是嵌套结构
-                for key, value in fixed_run_stats.items():
-                    if isinstance(value, dict) and 'mean' in value:
-                        fixed_mean = value['mean']
+        # 获取训练时的维度
+        expected_dim = None
+        for key, value in run_stats.items():
+            if isinstance(value, dict):
+                for sub_key, sub_value in value.items():
+                    if sub_key == 'mean' and hasattr(sub_value, 'shape'):
+                        expected_dim = sub_value.shape[0]
                         break
-                # 如果不是嵌套结构，直接访问
-                if fixed_mean is None and 'mean' in fixed_run_stats:
-                    fixed_mean = fixed_run_stats['mean']
+                if expected_dim is not None:
+                    break
+        
+        if expected_dim is not None:
+            print(f"  - 训练时观测空间维度: {expected_dim}")
             
-            if fixed_mean is not None:
-                fixed_dim = fixed_mean.shape[0]
-                if fixed_dim != actual_dim:
-                    print(f"  - ❌ 修复失败：修复后维度 {fixed_dim} 仍不匹配")
-                else:
-                    # 更新 train_state（使用 replace 方法）
+            if actual_dim != expected_dim:
+                print(f"\n  ⚠️  维度不匹配：测试环境 {actual_dim} vs 训练时 {expected_dim}")
+                print(f"  - 差异: {expected_dim - actual_dim} 维")
+                print(f"  - 将尝试修复维度（截取前 {actual_dim} 维）")
+                print(f"  - ⚠️  注意：截取维度可能导致归一化不准确，但可以避免报错")
+                
+                # 修复维度：截取前 actual_dim 维
+                fixed_run_stats = fix_run_stats_dimension(run_stats, actual_dim)
+                
+                if fixed_run_stats is not None:
+                    # 更新 train_state
                     new_train_state = agent_state.train_state.replace(
                         run_stats=fixed_run_stats)
-                    # 更新 agent_state（@struct.dataclass 需要使用 replace）
+                    # 更新 agent_state
                     if hasattr(agent_state, 'replace'):
                         agent_state = agent_state.replace(train_state=new_train_state)
                     else:
-                        # 如果是普通 dataclass，直接创建新实例
                         from dataclasses import replace
                         agent_state = replace(agent_state, train_state=new_train_state)
-                    print(f"  - ✓ 维度已修复：{fixed_dim}")
+                    
+                    # 验证修复
+                    verify_run_stats = agent_state.train_state.run_stats
+                    if isinstance(verify_run_stats, dict):
+                        verify_mean = verify_run_stats.get(
+                            'RunningMeanStd_0', {}).get('mean', None)
+                        if verify_mean is not None:
+                            verify_dim = verify_mean.shape[0]
+                            if verify_dim == actual_dim:
+                                print(f"  - ✓ 维度已修复：{verify_dim}")
+                            else:
+                                print(f"  - ❌ 修复失败：修复后维度 {verify_dim} 仍不匹配")
+                        else:
+                            print(f"  - ⚠️  无法验证修复结果")
+                    else:
+                        print(f"  - ⚠️  修复后 run_stats 类型不正确")
+                else:
+                    print(f"  - ❌ 无法修复维度，将直接报错")
             else:
-                print(f"  - ⚠️  修复后的 run_stats 格式不正确")
+                print(f"  - ✓ 维度匹配：{actual_dim}，可以正常测试")
+        else:
+            print(f"  - ⚠️  无法获取训练时的维度")
     except Exception as e:
         print(f"  - ⚠️  检查维度时出错: {e}")
         import traceback
@@ -304,7 +344,22 @@ def main():
     
     print("  - 幽灵机器人可视化已启用!")
     
-    # 5. 依次测试每个轨迹
+    # 5. 最终验证 agent_state 的维度
+    print(f"\n最终验证 agent_state 维度...")
+    final_run_stats = agent_state.train_state.run_stats
+    if isinstance(final_run_stats, dict) and 'RunningMeanStd_0' in final_run_stats:
+        final_mean = final_run_stats['RunningMeanStd_0'].get('mean', None)
+        if final_mean is not None:
+            final_dim = final_mean.shape[0]
+            print(f"  - 最终 run_stats mean 维度: {final_dim}")
+            print(f"  - 环境观测空间维度: {actual_dim}")
+            if final_dim == actual_dim:
+                print(f"  - ✓ 维度匹配，可以正常测试")
+            else:
+                print(f"  - ❌ 维度仍不匹配！这会导致身体扭曲问题")
+                print(f"  - 建议：检查维度修复代码是否正确执行")
+    
+    # 6. 依次测试每个轨迹
     print(f"\n{'='*70}")
     print(f"开始测试 {len(TRAJECTORY_PATHS)} 个轨迹文件")
     print(f"{'='*70}")

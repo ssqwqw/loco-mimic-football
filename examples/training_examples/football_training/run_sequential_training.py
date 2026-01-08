@@ -32,7 +32,7 @@ def run_training(config_name):
 
 def main():
     # 定义要运行的配置文件列表
-    configs = ["1",]
+    configs = ["2",]
     
     success_count = 0
     total_count = len(configs)

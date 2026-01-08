@@ -404,7 +404,7 @@ Unitree G1 - 29 DoF (基于GMR配置)
       </body>
     </body>
 
-    <!-- Football (Soccer Ball) - 使用 mocap body，每个环境实例可以有独立的位置 -->
+    <!-- Football (Soccer Ball) - 使用 mocap body 避免 MJX 约束问题 -->
     <body name="football" mocap="true" pos="0.8 0 0.11">
       <geom name="football_geom" type="sphere" size="0.11" 
             rgba="0.2 0.2 0.2 1" 

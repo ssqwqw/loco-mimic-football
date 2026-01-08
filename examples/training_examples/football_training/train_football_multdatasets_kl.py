@@ -22,6 +22,11 @@ from loco_mujoco.trajectory import Trajectory
 from loco_mujoco.utils.metrics import QuantityContainer
 from loco_mujoco.utils import MetricsHandler
 
+# ⭐ 导入自定义奖励函数，确保在训练时被注册
+training_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, training_dir)
+from football_reward import FootballApproachReward
+
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf

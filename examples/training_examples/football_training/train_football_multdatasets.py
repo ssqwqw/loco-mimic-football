@@ -23,6 +23,12 @@ from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 import traceback
 
+# ⭐ 导入自定义的奖励函数和初始状态处理器，确保在训练时被注册
+training_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, training_dir)
+from football_reward import FootballApproachReward
+from football_init_state import FootballInitialStateHandler
+
 
 @hydra.main(version_base=None, config_path="./", config_name="conf_football")
 def experiment(config: DictConfig):
@@ -148,19 +154,74 @@ def experiment(config: DictConfig):
                 validation_metrics
             )
 
+            # 获取奖励配置参数
+            reward_params = config.experiment.env_params.reward_params
+            football_approach_weight = reward_params.get('football_approach_weight', 0.3)
+            football_distance_scale = reward_params.get('football_distance_scale', 0.5)
+            
             for i in range(len(training_metrics.mean_episode_return)):
-                run.log({
+                # 基础指标
+                log_dict = {
                     "Mean Episode Return": training_metrics.mean_episode_return[i],
                     "Mean Episode Length": training_metrics.mean_episode_length[i]
-                }, step=int(training_metrics.max_timestep[i]))
+                }
+                
+                # 添加奖励配置信息（用于参考）
+                log_dict.update({
+                    "Reward Config/Football Approach Weight": football_approach_weight,
+                    "Reward Config/Football Distance Scale": football_distance_scale,
+                    "Reward Config/Qpos Weight": reward_params.get('qpos_w_sum', 0.7),
+                    "Reward Config/Qvel Weight": reward_params.get('qvel_w_sum', 0.34),
+                    "Reward Config/Rpos Weight": reward_params.get('rpos_w_sum', 0.8),
+                    "Reward Config/Rquat Weight": reward_params.get('rquat_w_sum', 0.5),
+                    "Reward Config/Rvel Weight": reward_params.get('rvel_w_sum', 0.24),
+                    "Reward Config/Upper Body Stability Weight": reward_params.get('upper_body_stability_w', 0.3),
+                    "Reward Config/Waist Stability Weight": reward_params.get('waist_stability_w', 0.2),
+                })
+                
+                # 计算奖励组件的估计值（基于总奖励和配置参数）
+                # 注意：这是估计值，实际值可能略有不同
+                total_return = training_metrics.mean_episode_return[i]
+                
+                # 估计基础奖励和足球奖励的比例
+                # 假设基础奖励占总奖励的 (1 - football_weight) 部分
+                # 这是一个简化的估计，实际值可能更复杂
+                estimated_base_reward = total_return * (1 - football_approach_weight) / (1 + football_approach_weight)
+                estimated_football_reward = total_return * football_approach_weight / (1 + football_approach_weight)
+                
+                # 添加奖励组件到日志
+                log_dict.update({
+                    "Reward Components/Base Reward (estimated)": estimated_base_reward,
+                    "Reward Components/Football Reward (estimated)": estimated_football_reward,
+                    "Reward Components/Football Reward Weighted (estimated)": estimated_football_reward * football_approach_weight,
+                    "Reward Components/Total Reward": total_return,
+                })
+                
+                run.log(log_dict, step=int(training_metrics.max_timestep[i]))
 
                 if ((i + 1) % config.experiment.validation_interval == 0 and 
                     config.experiment.validation.active):
                     
-                    run.log({
+                    # 验证指标
+                    val_log_dict = {
                         "Validation Info/Mean Episode Return": validation_metrics.mean_episode_return[i],
                         "Validation Info/Mean Episode Length": validation_metrics.mean_episode_length[i]
-                    }, step=int(training_metrics.max_timestep[i]))
+                    }
+                    
+                    # 添加验证阶段的奖励组件估计值
+                    val_total_return = validation_metrics.mean_episode_return[i]
+                    
+                    val_estimated_base_reward = val_total_return * (1 - football_approach_weight) / (1 + football_approach_weight)
+                    val_estimated_football_reward = val_total_return * football_approach_weight / (1 + football_approach_weight)
+                    
+                    val_log_dict.update({
+                        "Validation Info/Reward Components/Base Reward (estimated)": val_estimated_base_reward,
+                        "Validation Info/Reward Components/Football Reward (estimated)": val_estimated_football_reward,
+                        "Validation Info/Reward Components/Football Reward Weighted (estimated)": val_estimated_football_reward * football_approach_weight,
+                        "Validation Info/Reward Components/Total Reward": val_total_return,
+                    })
+                    
+                    run.log(val_log_dict, step=int(training_metrics.max_timestep[i]))
 
                     # 记录所有度量
                     metrics_to_log = {}
@@ -192,6 +253,49 @@ def experiment(config: DictConfig):
         video_file = env.video_file_path
         run.log({"Agent Video": wandb.Video(video_file)})
         print(f"✓ Video saved: {video_file}")
+
+        # 在 wandb.finish() 之前，打印所有的指标值（包括最后的 summary）
+        print("\n" + "=" * 70)
+        print("WANDB RUN SUMMARY - 所有指标")
+        print("=" * 70)
+        
+        # 获取 run 的 summary（所有记录的指标）
+        summary = run.summary
+        
+        # 打印所有指标，按字母顺序排序
+        if summary:
+            print("\n所有指标值（按字母顺序排序）：")
+            print("-" * 70)
+            # 获取所有键并按字母顺序排序
+            sorted_keys = sorted(summary.keys())
+            for key in sorted_keys:
+                value = summary[key]
+                # 跳过内部指标（以下划线开头）
+                if key.startswith('_'):
+                    continue
+                # 格式化显示
+                if isinstance(value, (int, float)):
+                    # 如果是数字，格式化为6位小数
+                    if abs(value) >= 1000 or (abs(value) < 0.001 and value != 0):
+                        print(f"  {key:50} {value:>15.6e}")
+                    else:
+                        print(f"  {key:50} {value:>15.6f}")
+                elif isinstance(value, bool):
+                    print(f"  {key:50} {str(value):>15}")
+                elif isinstance(value, (list, tuple)):
+                    print(f"  {key:50} {str(value)[:50]:>15}")
+                else:
+                    print(f"  {key:50} {str(value)[:50]:>15}")
+            print("-" * 70)
+            # 统计显示的指标数量（排除内部指标）
+            displayed_count = len([k for k in sorted_keys if not k.startswith('_')])
+            print(f"\n总共显示了 {displayed_count} 个指标（已排除内部指标）")
+            print(f"总共有 {len(sorted_keys)} 个指标（包括内部指标）")
+        else:
+            print("⚠️  没有找到 summary 数据")
+        
+        print("=" * 70)
+        print()
 
         wandb.finish()
         
