@@ -1,0 +1,110 @@
+defaults:
+  - override hydra/job_logging: default
+  - override hydra/launcher: basic
+
+wandb:
+  project: "11-24-footballtrain"
+# ⭐ 在这里添加顶层 lr
+lr: 85e-6
+
+
+experiment:
+  task_factory:
+    name: ImitationFactory
+    params:
+      custom_dataset_conf:
+        traj: null
+        
+  env_params:
+    env_name: MjxUnitreeG1
+    headless: True
+    disable_arms: false
+    horizon: 260
+    spec: "/home/user/loco-mujoco/loco_mujoco/models/unitree_g1/g1_29dof.xml"
+    goal_type: GoalTrajMimic
+    goal_params:
+      visualize_goal: false
+    control_type: ${control_config.torque_control.control_type}
+    control_params: ${control_config.torque_control.control_params}
+    reward_type: MimicReward
+    reward_params:
+      qpos_w_sum: 0.7
+      qvel_w_sum: 0.34
+      rpos_w_sum: 0.8
+      rquat_w_sum: 0.5
+      rvel_w_sum: 0.24
+      upper_body_stability_w: 0.3  # 启用上半身稳定性奖励
+      waist_stability_w: 0.2        # 新增：腰部稳定性权重
+
+      sites_for_mimic:
+        - upper_body_mimic
+        - left_hand_mimic
+        - left_foot_mimic
+        - right_hand_mimic
+        - right_foot_mimic
+        
+  # PPO 超参数
+  hidden_layers: [1024, 512, 512, 256, 256]
+  lr: 85e-6  # 这个也保留
+  num_envs: 4096
+  num_steps: 200
+  total_timesteps: 300e6
+  update_epochs: 8
+  proportion_env_reward: 0.0
+  num_minibatches: 32
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.25
+  init_std: 0.15
+  learnable_std: true
+  ent_coef: 0.01
+  vf_coef: 0.5
+  max_grad_norm: 0.5
+  activation: elu  # 或 swish, silu, gelu 最后是tanh等
+  anneal_lr: true  # 保持启用
+  weight_decay: 1e-5
+  normalize_env: true
+  debug: false
+  n_seeds: 1
+  vmap_across_seeds: true
+  # 新增：网络架构增强参数
+  use_residual: false  # 启用残差连接
+  use_attention: false  # 启用注意力机制（可选）
+  attention_embed_dim: 64  # 注意力嵌入维度（当use_attention=true时使用）
+  
+  # ⭐ 调整验证频率
+  validation:
+    active: true
+    num_steps: 100
+    num_envs: 100
+    num: 30  # 增加验证次数，更频繁监控
+    quantities:
+      - JointPosition
+      - JointVelocity
+      - RelSitePosition
+      - RelSiteVelocity
+      - RelSiteOrientation
+    measures:
+      - EuclideanDistance
+      - DynamicTimeWarping
+      - DiscreteFrechetDistance
+    rel_site_names:
+      - upper_body_mimic
+      - left_hand_mimic
+      - left_foot_mimic
+      - right_hand_mimic
+      - right_foot_mimic
+    joints_to_ignore:
+      - pelvis_tx
+      - pelvis_tz
+      - pelvis_ty
+      - pelvis_tilt
+      - pelvis_list
+      - pelvis_rotation
+
+control_config:
+  torque_control:
+    control_type: DefaultControl
+    control_params:
+      max_torque: 1  # 适当调整最大扭矩
+      min_torque: -1  # 允许负扭矩，使动作更自然

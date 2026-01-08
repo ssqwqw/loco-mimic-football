@@ -1,0 +1,27 @@
+
+将pkl格式转换为npz格式
+python convert_pkl_to_npz_29dof.py 
+
+展示转换后的npz格式的数据集
+python play_npz_with_video.py
+
+训练单个数据集
+python train_football.py --config-name=11-14
+
+使用多个数据集进行训练
+python train_football_multdatasets.py --config-path 11-24-yaml --config-name 11-24v2
+
+python train_football_multdatasets_kl.py --config-path 11-25-yaml --config-name 11-29v7-kl
+
+按顺序训练多个数据集
+python run_sequential_training.py
+
+评估训练好的模型和对比原始轨迹
+python test_trained_model.py 
+多个数据集
+python test_trained_model-multidatasets.py
+
+
+
+
+

@@ -1,0 +1,34 @@
+.idea/
+.cursor/
+__pycache__/
+*.egg-info/
+logs/
+None/
+dist/
+htmlcov/
+.pytest_cache/
+.coverage
+.DS_Store
+loco_mujoco/datasets/
+mushroom_rl_recordings/
+LocoMuJoCo_recordings/
+record_all/
+_build/
+loco_mujoco/models/myo_model/
+wandb/
+ckpts/
+outputs/
+multirun/
+home/
+loco_mujoco/smpl/conf_paths.yaml
+data/
+*.vscode
+loco_mujoco/LOCOMUJOCO_VARIABLES.yaml
+**/video2images.sh
+**/expert_traj.npz
+# 排除所有权重文件
+*.npz
+# 排除所有 README 文件
+README.md
+**/README.md
+**/README.MD
