@@ -11,7 +11,7 @@ def run_training(config_name):
     """运行单个训练配置"""
     cmd = [
         "python", "train_football_multdatasets.py",
-        "--config-path", "11-25-yaml",
+        "--config-path", "1-8-yaml",
         "--config-name", config_name
     ]
     
@@ -32,7 +32,7 @@ def run_training(config_name):
 
 def main():
     # 定义要运行的配置文件列表
-    configs = ["12-23v1",]
+    configs = ["1",]
     
     success_count = 0
     total_count = len(configs)

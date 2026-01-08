@@ -80,9 +80,9 @@ class VideoRecorder(object):
                         "ffmpeg",
                         "-i", self._video_writer_path,  # Input video
                         "-c:v", "libx264",  # H.264 codec
-                        "-profile:v", "baseline",  # Set to Baseline profile (can change to main if needed)
+                        "-profile:v", "high",  # Use high profile to support lossless encoding
                         "-preset", "fast",  # Encoding preset
-                        "-crf", "0",  # Quality setting
+                        "-crf", "18",  # Quality setting (0 is lossless, 18 is high quality, 23 is default)
                         "-an",  # Remove audio
                         # "-r", "30",  # Frame rate
                         "-r", str(self._fps),  # Frame rate - 使用原始FPS而不是强制30
